@@ -23,43 +23,34 @@ class SubtitleProcessor:
             print(f"Invalid JSON in {config_path}.")
             self.openai_client = None
 
-    def extract_subtitle_tracks(self, video_file: str) -> List[str]:
+    def extract_subtitle_tracks(self, mkv_file: str) -> List[str]:
         try:
-            # Use FFprobe to list subtitle streams
-            list_tracks_cmd = ['ffprobe', '-v', 'error', 
-                               '-select_streams', 's', 
-                               '-show_entries', 'stream=index:stream_tags=language', 
-                               '-of', 'csv=p=0', video_file]
-            
+            list_tracks_cmd = ['mkvmerge', '-i', mkv_file]
             result = subprocess.run(list_tracks_cmd, capture_output=True, text=True)
+            subtitle_track_ids = []
             
-            # FFprobe output will be stream indices, potentially with language
-            subtitle_tracks = [track.strip() for track in result.stdout.split('\n') if track.strip()]
+            for line in result.stdout.split('\n'):
+                if 'subtitles' in line:
+                    track_id = re.search(r"Track ID (\d+): subtitles", line)
+                    if track_id:
+                        subtitle_track_ids.append(track_id.group(1))
             
-            return subtitle_tracks
+            return subtitle_track_ids
         except Exception as e:
             print(f"Error extracting subtitle tracks: {e}")
             return []
 
-    def extract_subtitles_from_mkv(self, video_file: str, output_dir: str) -> List[str]:
+    def extract_subtitles_from_mkv(self, mkv_file: str, output_dir: str) -> List[str]:
         os.makedirs(output_dir, exist_ok=True)
-        subtitle_track_ids = self.extract_subtitle_tracks(video_file)
+        subtitle_track_ids = self.extract_subtitle_tracks(mkv_file)
         extracted_subtitles = []
 
         for track_id in subtitle_track_ids:
-            filename = os.path.basename(video_file)
+            filename = os.path.basename(mkv_file)
             dst_srt_path = os.path.join(output_dir, f"{filename.rsplit('.', 1)[0]}_track{track_id}.srt")
-            
-            # Use FFmpeg to extract subtitles
-            command = ['ffmpeg', '-i', video_file, 
-                       '-map', f'0:s:{track_id}', 
-                       dst_srt_path, '-y']
-            
-            try:
-                subprocess.run(command, check=True)
-                extracted_subtitles.append(dst_srt_path)
-            except subprocess.CalledProcessError as e:
-                print(f"Failed to extract subtitle track {track_id}: {e}")
+            command = ['mkvextract', mkv_file, 'tracks', f'{track_id}:{dst_srt_path}']
+            subprocess.run(command)
+            extracted_subtitles.append(dst_srt_path)
 
         return extracted_subtitles
 
@@ -197,7 +188,7 @@ def main():
 
     while True:
         print("\nSubtitle Processing Tool")
-        print("1. Extract subtitles from video")
+        print("1. Extract subtitles from MKV")
         print("2. Generate subtitles with Whisper")
         print("3. Translate subtitles")
         print("4. Exit")
@@ -205,12 +196,12 @@ def main():
         choice = input("Enter your choice (1-4): ").strip()
 
         if choice == '1':
-            video_path = input("Enter path to video file: ").strip()
-            if not os.path.exists(video_path):
+            mkv_path = input("Enter path to MKV file: ").strip()
+            if not os.path.exists(mkv_path):
                 print("File does not exist.")
                 continue
-            output_dir = os.path.dirname(video_path)
-            processor.extract_subtitles_from_mkv(video_path, output_dir)
+            output_dir = os.path.dirname(mkv_path)
+            processor.extract_subtitles_from_mkv(mkv_path, output_dir)
 
         elif choice == '2':
             video_path = input("Enter path to video file: ").strip()

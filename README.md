@@ -4,7 +4,7 @@ A command-line Python tool for extracting, generating, and translating video sub
 
 ## Features
 
-- Extract existing subtitle tracks from video files
+- Extract existing subtitle tracks from mkv files
 - Generate subtitles from video audio using OpenAI Whisper
 - Translate subtitles to different languages using OpenAI API
 - Support for batch processing of files in folders

@@ -185,49 +185,82 @@ class SubtitleProcessor:
 
 def main():
     processor = SubtitleProcessor()
-
+    
     while True:
         print("\nSubtitle Processing Tool")
-        print("1. Extract subtitles from MKV")
-        print("2. Generate subtitles with Whisper")
+        print("1. Extract subtitles from video files")
+        print("2. Generate subtitles with Whisper") 
         print("3. Translate subtitles")
         print("4. Exit")
         
         choice = input("Enter your choice (1-4): ").strip()
 
-        if choice == '1':
-            mkv_path = input("Enter path to MKV file: ").strip()
-            if not os.path.exists(mkv_path):
-                print("File does not exist.")
-                continue
-            output_dir = os.path.dirname(mkv_path)
-            processor.extract_subtitles_from_mkv(mkv_path, output_dir)
+        if choice in ['1', '2', '3']:
+            mode = input("Process single file or folder? (single/folder): ").strip().lower()
+            
+            if mode == 'single':
+                if choice == '1':
+                    mkv_path = input("Enter path to video file: ").strip()
+                    if not os.path.exists(mkv_path):
+                        print("File does not exist.")
+                        continue
+                    output_dir = os.path.dirname(mkv_path)
+                    processor.extract_subtitles_from_mkv(mkv_path, output_dir)
+                    
+                elif choice == '2':
+                    video_path = input("Enter path to video file: ").strip()
+                    if not os.path.exists(video_path):
+                        print("File does not exist.")
+                        continue
+                    language = 'en'  # Set default language to English
+                    processor.generate_subtitles_with_whisper(video_path, language)
 
-        elif choice == '2':
-            video_path = input("Enter path to video file: ").strip()
-            if not os.path.exists(video_path):
-                print("File does not exist.")
-                continue
-            language = input("Enter language code (optional, press Enter to skip): ").strip() or None
-            processor.generate_subtitles_with_whisper(video_path, language)
-
-        elif choice == '3':
-            if not processor.openai_client:
-                print("OpenAI API key not configured in config.json.")
-                continue
-            input_srt = input("Enter path to input SRT file: ").strip()
-            if not os.path.exists(input_srt):
-                print("File does not exist.")
-                continue
-            target_lang = input("Enter target language (e.g., Swedish, French): ").strip()
-            processor.translate_subtitles(input_srt, target_lang)
+                    
+                elif choice == '3':
+                    if not processor.openai_client:
+                        print("OpenAI API key not configured in config.json.")
+                        continue
+                    input_srt = input("Enter path to input SRT file: ").strip()
+                    if not os.path.exists(input_srt):
+                        print("File does not exist.")
+                        continue
+                    target_lang = input("Enter target language (e.g., Swedish, French): ").strip()
+                    processor.translate_subtitles(input_srt, target_lang)
+                    
+            elif mode == 'folder':
+                folder_path = input("Enter folder path: ").strip()
+                if not os.path.isdir(folder_path):
+                    print("Invalid folder path")
+                    continue
+                
+                # Ask for target language once when translating multiple files
+                target_lang = None
+                if choice == '3':
+                    if not processor.openai_client:
+                        print("OpenAI API key not configured in config.json.")
+                        continue
+                    target_lang = input("Enter target language for all files (e.g., Swedish, French): ").strip()
+                
+                for root, _, files in os.walk(folder_path):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        
+                        if choice == '1' and file.lower().endswith(('.mkv','.mp4','.avi','.webm')):
+                            output_dir = os.path.dirname(file_path)
+                            processor.extract_subtitles_from_mkv(file_path, output_dir)
+                            
+                        elif choice == '2' and file.lower().endswith(('.mkv','.mp4','.avi','.webm')):
+                            processor.generate_subtitles_with_whisper(file_path, 'en')
+                            
+                        elif choice == '3' and file.lower().endswith('.srt'):
+                            processor.translate_subtitles(file_path, target_lang)
 
         elif choice == '4':
             print("Exiting...")
             break
-
+            
         else:
             print("Invalid choice. Please try again.")
-            
+
 if __name__ == "__main__":
     main()

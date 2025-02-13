@@ -23,6 +23,48 @@ class SubtitleProcessor:
             print(f"Invalid JSON in {config_path}.")
             self.openai_client = None
 
+    def list_audio_tracks(self, video_path: str) -> List[tuple[int, str, str]]:
+        """
+        List all audio tracks in the video file.
+        Returns a list of tuples containing (track_index, track_info, language).
+        """
+        try:
+            command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', 
+                      '-show_streams', '-select_streams', 'a', video_path]
+            result = subprocess.run(command, capture_output=True, text=True)
+            data = json.loads(result.stdout)
+            
+            audio_tracks = []
+            for i, stream in enumerate(data.get('streams', [])):
+                language = stream.get('tags', {}).get('language', 'unknown')
+                title = stream.get('tags', {}).get('title', '')
+                codec = stream.get('codec_name', 'unknown')
+                channels = stream.get('channels', 0)
+                
+                track_info = f"Track {i}: {codec}, {channels} channels"
+                if language != 'unknown':
+                    track_info += f", Language: {language}"
+                if title:
+                    track_info += f", Title: {title}"
+                
+                audio_tracks.append((i, track_info, language))
+            
+            return audio_tracks
+        except Exception as e:
+            print(f"Error listing audio tracks: {e}")
+            return []
+        
+    def find_english_track(self, audio_tracks: List[tuple[int, str, str]]) -> int:
+        """
+        Find the first English audio track from the list.
+        Returns the track index or None if no English track is found.
+        """
+        english_codes = ['eng', 'en']
+        for track_index, _, language in audio_tracks:
+            if language.lower() in english_codes:
+                return track_index
+        return None
+        
     def extract_subtitle_tracks(self, mkv_file: str) -> List[str]:
         try:
             list_tracks_cmd = ['mkvmerge', '-i', mkv_file]
@@ -54,38 +96,58 @@ class SubtitleProcessor:
 
         return extracted_subtitles
 
-    def extract_audio(self, video_path: str, audio_path: str) -> None:
+    def extract_audio(self, video_path: str, audio_path: str, track_index: int = 0) -> None:
+        """
+        Extract audio from the video file, allowing specific track selection.
+        """
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
         command = [
             'ffmpeg', '-i', video_path,
+            '-map', f'0:a:{track_index}',
             '-vn', '-acodec', 'pcm_s16le',
             '-ar', '44100', '-ac', '2',
             audio_path, '-y'
         ]
         subprocess.run(command, check=True, capture_output=True)
 
-    def generate_subtitles_with_whisper(self, video_path: str, language: str = None) -> str:
+
+    def generate_subtitles_with_whisper(self, video_path: str, language: str = 'en') -> str:
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
 
+        # List available audio tracks
+        audio_tracks = self.list_audio_tracks(video_path)
+        
+        if not audio_tracks:
+            print("No audio tracks found in the video file.")
+            return None
+        
+        # Try to find English track
+        audio_track = self.find_english_track(audio_tracks)
+        
+        if audio_track is None:
+            print("No English audio track found. Available tracks:")
+            for index, info, _ in audio_tracks:
+                print(info)
+            return None
+
         output_srt_path = os.path.splitext(video_path)[0] + ".srt"
-        audio_path = f"{os.path.splitext(video_path)[0]}_temp.wav"
+        audio_path = f"{os.path.splitext(video_path)[0]}_temp_track{audio_track}.wav"
         
         try:
-            print("Extracting audio...")
-            self.extract_audio(video_path, audio_path)
+            print(f"Using English audio track {audio_track}...")
+            self.extract_audio(video_path, audio_path, audio_track)
             
             print("Generating subtitles with Whisper...")
             model = whisper.load_model("medium.en")
             
             transcribe_options = {
                 "word_timestamps": True,
-                "verbose": None
+                "verbose": None,
+                "language": language
             }
-            if language:
-                transcribe_options["language"] = language
             
             result = model.transcribe(audio_path, **transcribe_options)
             
